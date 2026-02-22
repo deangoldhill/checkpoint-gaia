@@ -64,13 +64,12 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                 headers = {"X-chkp-sid": sid, "Content-Type": "application/json"}
                 data = {}
 
-                # 2. Fetch Simple API Data
+                # 2. Fetch Simple API Data (Connections removed)
                 simple_endpoints = [
                     "show-serial-number",
                     "show-version",
                     "show-asset",
-                    "show-hostname",
-                    "show-connections"
+                    "show-hostname"
                 ]
 
                 for endpoint in simple_endpoints:
@@ -133,7 +132,6 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                 parsed["memory_usage"] = round(((total_mem - free_mem) / total_mem) * 100, 2)
 
         # --- DIAGNOSTICS: DISK ---
-        # Based on exact JSON payload provided
         diag_disk = raw_data.get("diag_disk", {})
         disk_objects = diag_disk.get("objects", [])
         for disk in disk_objects:
@@ -143,7 +141,6 @@ class CheckPointCoordinator(DataUpdateCoordinator):
             
             if partition and used is not None and total is not None:
                 try:
-                    # Calculate percentage from raw bytes
                     used_pct = (float(used) / float(total)) * 100
                     if partition == "/":
                         parsed["disk_root_used"] = round(used_pct, 2)
@@ -159,32 +156,39 @@ class CheckPointCoordinator(DataUpdateCoordinator):
         ver_data = raw_data.get("show-version", {})
         parsed["product_version"] = find_key(ver_data, "product-version") or "Unknown"
 
-        asset_data = raw_data.get("show-asset", {})
-        sys_asset = find_key(asset_data, "system") or asset_data
-        parsed["cpu_cores"] = find_key(sys_asset, "cpu-cores") or find_key(sys_asset, "cores") or "Unknown"
-
         host_data = raw_data.get("show-hostname", {})
         parsed["hostname"] = find_key(host_data, "hostname") or find_key(host_data, "name") or "Unknown"
 
-        # --- CONCURRENT CONNECTIONS ---
-        conn_data = raw_data.get("show-connections", {})
-        conn_total = None
+        # --- HARDWARE ASSETS (Platform, Cores, Model, Frequency) ---
+        asset_data = raw_data.get("show-asset", {})
+        system_assets = asset_data.get("system", [])
         
-        for k in ["total", "concurrent-connections", "active-connections", "count"]:
-            val = find_key(conn_data, k)
-            if val is not None and not isinstance(val, (list, dict)):
-                conn_total = val
-                break
-                
-        if conn_total is None:
-            conn_objs = find_key(conn_data, "objects") or find_key(conn_data, "connections")
-            if isinstance(conn_objs, list):
-                conn_total = len(conn_objs)
+        # Set defaults
+        parsed["cpu_cores"] = "Unknown"
+        parsed["platform"] = "Unknown"
+        parsed["cpu_model"] = "Unknown"
+        parsed["cpu_frequency"] = "Unknown"
+        parsed["cpu_hyperthreading"] = "Unknown"
 
-        if conn_total is not None:
-            try:
-                parsed["concurrent_connections"] = float(conn_total)
-            except (ValueError, TypeError):
-                pass
+        if isinstance(system_assets, list):
+            for item in system_assets:
+                if isinstance(item, dict):
+                    key = item.get("key")
+                    val = item.get("value", "Unknown")
+                    
+                    if key == "Number of Cores":
+                        parsed["cpu_cores"] = val
+                    elif key == "Platform":
+                        parsed["platform"] = val
+                    elif key == "CPU Model":
+                        parsed["cpu_model"] = val
+                    elif key == "CPU Frequency":
+                        try:
+                            # Safely cast to a number for graphing
+                            parsed["cpu_frequency"] = round(float(val), 2)
+                        except (ValueError, TypeError):
+                            parsed["cpu_frequency"] = val
+                    elif key == "CPU Hyperthreading":
+                        parsed["cpu_hyperthreading"] = val
 
         return parsed
