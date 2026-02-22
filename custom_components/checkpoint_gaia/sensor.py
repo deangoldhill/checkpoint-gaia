@@ -7,15 +7,23 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     sensors = [
+        # Diagnostics
         CheckPointSensor(coordinator, "memory_usage", "Memory Usage", PERCENTAGE, "mdi:memory", True),
         CheckPointSensor(coordinator, "cpu_usage", "CPU Usage", PERCENTAGE, "mdi:cpu-64-bit", True),
         CheckPointSensor(coordinator, "disk_root_used", "Disk Root Used", PERCENTAGE, "mdi:harddisk", True),
         CheckPointSensor(coordinator, "disk_var_log_used", "Disk /var/log Used", PERCENTAGE, "mdi:folder", True),
+        
+        # System Strings
+        CheckPointSensor(coordinator, "hostname", "Hostname", None, "mdi:network", False),
         CheckPointSensor(coordinator, "serial_number", "Serial Number", None, "mdi:barcode", False),
         CheckPointSensor(coordinator, "product_version", "Product Version", None, "mdi:information", False),
-        CheckPointSensor(coordinator, "cpu_cores", "CPU Cores", None, "mdi:chip", False),
-        CheckPointSensor(coordinator, "hostname", "Hostname", None, "mdi:network", False),
-        CheckPointSensor(coordinator, "concurrent_connections", "Concurrent Connections", None, "mdi:connection", True),
+        CheckPointSensor(coordinator, "platform", "Platform", None, "mdi:server", False),
+        
+        # CPU Specifics
+        CheckPointSensor(coordinator, "cpu_model", "CPU Model", None, "mdi:chip", False),
+        CheckPointSensor(coordinator, "cpu_cores", "CPU Cores", None, "mdi:cpu-32-bit", False),
+        CheckPointSensor(coordinator, "cpu_frequency", "CPU Frequency", "MHz", "mdi:sine-wave", True),
+        CheckPointSensor(coordinator, "cpu_hyperthreading", "CPU Hyperthreading", None, "mdi:call-split", False),
     ]
     
     async_add_entities(sensors)
@@ -35,7 +43,7 @@ class CheckPointSensor(CoordinatorEntity, SensorEntity):
             "identifiers": {(DOMAIN, coordinator.entry.entry_id)},
             "name": f"CheckPoint Gaia ({coordinator.data.get('hostname', 'Unknown')})",
             "manufacturer": "Check Point",
-            "model": "Gaia Firewall",
+            "model": coordinator.data.get("platform", "Gaia Firewall"),
             "sw_version": coordinator.data.get("product_version"),
         }
 
