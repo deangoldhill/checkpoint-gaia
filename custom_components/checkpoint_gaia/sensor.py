@@ -15,6 +15,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         CheckPointSensor(coordinator, "product_version", "Product Version", None, "mdi:information", False),
         CheckPointSensor(coordinator, "cpu_cores", "CPU Cores", None, "mdi:chip", False),
         CheckPointSensor(coordinator, "hostname", "Hostname", None, "mdi:network", False),
+        CheckPointSensor(coordinator, "concurrent_connections", "Concurrent Connections", None, "mdi:connection", True),
     ]
     
     async_add_entities(sensors)
