@@ -9,7 +9,7 @@ from homeassistant.const import Platform
 from .const import (
     DOMAIN, CONF_HOST, CONF_USERNAME, 
     CONF_PASSWORD, CONF_PORT, CONF_VERIFY_SSL,
-    UPDATE_INTERVAL_SECONDS
+    CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,11 +33,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 class CheckPointCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, entry):
+        # Grab the interval from the user's setup config, fallback to default if missing
+        update_interval = entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+        
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL_SECONDS),
+            update_interval=timedelta(seconds=update_interval),
         )
         self.entry = entry
         self.base_url = f"https://{entry.data[CONF_HOST]}:{entry.data[CONF_PORT]}/gaia_api/v1.8"
@@ -167,7 +170,7 @@ class CheckPointCoordinator(DataUpdateCoordinator):
         parsed["cpu_cores"] = "Unknown"
         parsed["platform"] = "Unknown"
         parsed["cpu_model"] = "Unknown"
-        parsed["cpu_frequency"] = None # None handles unknown states for measurement classes better in HA
+        parsed["cpu_frequency"] = None
         parsed["cpu_hyperthreading"] = "Unknown"
 
         if isinstance(system_assets, list):
@@ -184,7 +187,6 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                         parsed["cpu_model"] = val
                     elif key == "CPU Frequency":
                         try:
-                            # Strip out "MHz" or any extra spaces so HA only gets the pure number
                             clean_val = str(val).lower().replace("mhz", "").strip()
                             parsed["cpu_frequency"] = round(float(clean_val), 2)
                         except (ValueError, TypeError):
