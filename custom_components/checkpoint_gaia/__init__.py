@@ -64,7 +64,7 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                 headers = {"X-chkp-sid": sid, "Content-Type": "application/json"}
                 data = {}
 
-                # 2. Fetch Simple API Data (Connections removed)
+                # 2. Fetch Simple API Data
                 simple_endpoints = [
                     "show-serial-number",
                     "show-version",
@@ -167,7 +167,7 @@ class CheckPointCoordinator(DataUpdateCoordinator):
         parsed["cpu_cores"] = "Unknown"
         parsed["platform"] = "Unknown"
         parsed["cpu_model"] = "Unknown"
-        parsed["cpu_frequency"] = "Unknown"
+        parsed["cpu_frequency"] = None # None handles unknown states for measurement classes better in HA
         parsed["cpu_hyperthreading"] = "Unknown"
 
         if isinstance(system_assets, list):
@@ -184,10 +184,11 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                         parsed["cpu_model"] = val
                     elif key == "CPU Frequency":
                         try:
-                            # Safely cast to a number for graphing
-                            parsed["cpu_frequency"] = round(float(val), 2)
+                            # Strip out "MHz" or any extra spaces so HA only gets the pure number
+                            clean_val = str(val).lower().replace("mhz", "").strip()
+                            parsed["cpu_frequency"] = round(float(clean_val), 2)
                         except (ValueError, TypeError):
-                            parsed["cpu_frequency"] = val
+                            pass
                     elif key == "CPU Hyperthreading":
                         parsed["cpu_hyperthreading"] = val
 
