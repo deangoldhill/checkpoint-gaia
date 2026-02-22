@@ -56,7 +56,6 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                     resp.raise_for_status()
                     login_data = await resp.json()
                     
-                    # Safely get SID whether login_data is a dict or a wrapped list
                     if isinstance(login_data, dict):
                         sid = login_data.get("sid")
                     else:
@@ -91,72 +90,80 @@ class CheckPointCoordinator(DataUpdateCoordinator):
     def _parse_data(self, raw_data):
         parsed = {}
         
-        # Helper function to safely extract keys regardless of dict or list structures
-        def safe_get(obj, key, default=None):
-            if default is None:
-                default = {}
+        # Recursive helper to find a key no matter how deeply nested it is in the JSON
+        def deep_find(obj, key):
             if isinstance(obj, dict):
-                return obj.get(key, default)
-            if isinstance(obj, list):
+                if key in obj:
+                    return obj[key]
+                for v in obj.values():
+                    res = deep_find(v, key)
+                    if res is not None:
+                        return res
+            elif isinstance(obj, list):
                 for item in obj:
-                    if isinstance(item, dict) and key in item:
-                        return item.get(key, default)
-            return default
+                    res = deep_find(item, key)
+                    if res is not None:
+                        return res
+            return None
 
-        # Parse show-diagnostics
-        diag = safe_get(raw_data, "show-diagnostics")
+        # 1. Parse show-diagnostics
+        diag = raw_data.get("show-diagnostics", {})
         if diag:
             # Memory %
-            mem = safe_get(diag, "memory")
-            total_mem = float(safe_get(mem, "total", 1)) # Prevent div by 0
-            free_mem = float(safe_get(mem, "free", 0))
-            if total_mem > 0:
+            mem = deep_find(diag, "memory") or {}
+            total_mem = float(mem.get("total", 1) if mem.get("total") is not None else 1)
+            free_mem = float(mem.get("free", 0) if mem.get("free") is not None else 0)
+            if total_mem > 1:
                 parsed["memory_usage"] = round(((total_mem - free_mem) / total_mem) * 100, 2)
             
             # CPU Total %
-            cpu = safe_get(diag, "cpu")
-            cpu_total = safe_get(cpu, "total")
-            parsed["cpu_usage"] = float(safe_get(cpu_total, "usage", 0))
+            cpu = deep_find(diag, "cpu") or {}
+            cpu_total = deep_find(cpu, "total") or {}
+            cpu_usage = cpu_total.get("usage")
+            if cpu_usage is not None:
+                parsed["cpu_usage"] = float(cpu_usage)
 
             # Disk Usage (/ and /var/log)
-            disk_data = safe_get(diag, "disk", [])
-            if isinstance(disk_data, dict):
-                disk_data = [disk_data] # Normalize to list if API returned a single dict
-                
-            if isinstance(disk_data, list):
-                for disk in disk_data:
-                    if isinstance(disk, dict):
-                        mount = disk.get("mount-point")
+            disk = deep_find(diag, "disk")
+            if isinstance(disk, dict):
+                disk = [disk]
+            if isinstance(disk, list):
+                for d in disk:
+                    if isinstance(d, dict):
+                        mount = d.get("mount-point")
                         if mount == "/":
-                            parsed["disk_root_used"] = float(disk.get("used-percentage", 0))
+                            parsed["disk_root_used"] = float(d.get("used-percentage", 0))
                         elif mount == "/var/log":
-                            parsed["disk_var_log_used"] = float(disk.get("used-percentage", 0))
+                            parsed["disk_var_log_used"] = float(d.get("used-percentage", 0))
 
-        # Parse show-serial-number
-        sn_data = safe_get(raw_data, "show-serial-number")
-        parsed["serial_number"] = safe_get(sn_data, "serial-number", "Unknown")
+        # 2. Parse show-serial-number
+        sn_data = raw_data.get("show-serial-number", {})
+        parsed["serial_number"] = deep_find(sn_data, "serial-number") or "Unknown"
 
-        # Parse show-version
-        ver_data = safe_get(raw_data, "show-version")
-        parsed["product_version"] = safe_get(ver_data, "product-version", "Unknown")
+        # 3. Parse show-version
+        ver_data = raw_data.get("show-version", {})
+        parsed["product_version"] = deep_find(ver_data, "product-version") or "Unknown"
 
-        # Parse show-asset
-        asset_data = safe_get(raw_data, "show-asset")
-        sys_asset = safe_get(asset_data, "system")
-        parsed["cpu_cores"] = safe_get(sys_asset, "cpu-cores", "Unknown")
+        # 4. Parse show-asset
+        asset_data = raw_data.get("show-asset", {})
+        parsed["cpu_cores"] = deep_find(asset_data, "cpu-cores") or "Unknown"
 
-        # Parse show-hostname
-        host_data = safe_get(raw_data, "show-hostname")
-        parsed["hostname"] = safe_get(host_data, "hostname", "Unknown")
+        # 5. Parse show-hostname
+        host_data = raw_data.get("show-hostname", {})
+        # Sometimes Gaia API keys it as "hostname", sometimes as "name"
+        parsed["hostname"] = deep_find(host_data, "hostname") or deep_find(host_data, "name") or "Unknown"
 
-        # Parse show-connections
-        conn_data = safe_get(raw_data, "show-connections")
-        parsed["concurrent_connections"] = safe_get(
-            conn_data, "total", safe_get(
-                conn_data, "connections", safe_get(
-                    conn_data, "concurrent-connections", 0
-                )
-            )
-        )
-
-        return parsed
+        # 6. Parse show-connections
+        conn_data = raw_data.get("show-connections", {})
+        conn_total = None
+        
+        # Check all common variations Check Point uses for connection counts
+        for k in ["total", "connections", "concurrent-connections", "active-connections", "count"]:
+            conn_total = deep_find(conn_data, k)
+            if conn_total is not None:
+                break
+                
+        # Fallback: if it returns an actual list of connections instead of a count
+        if conn_total is None:
+            conn_list = deep_find(conn_data, "objects")
+            if isinstance(
