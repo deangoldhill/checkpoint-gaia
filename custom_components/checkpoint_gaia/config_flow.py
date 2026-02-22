@@ -2,7 +2,8 @@ import voluptuous as vol
 from homeassistant import config_entries
 from .const import (
     DOMAIN, CONF_HOST, CONF_USERNAME, 
-    CONF_PASSWORD, CONF_PORT, CONF_VERIFY_SSL
+    CONF_PASSWORD, CONF_PORT, CONF_VERIFY_SSL,
+    CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
 )
 
 class CheckPointGaiaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -18,5 +19,6 @@ class CheckPointGaiaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_PASSWORD): str,
             vol.Optional(CONF_PORT, default=443): int,
             vol.Optional(CONF_VERIFY_SSL, default=False): bool,
+            vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL): int,
         })
         return self.async_show_form(step_id="user", data_schema=data_schema)
