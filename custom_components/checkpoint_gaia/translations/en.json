@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to CheckPoint Gaia",
+        "data": {
+          "host": "IP Address or Hostname",
+          "username": "Username",
+          "password": "Password",
+          "port": "Port",
+          "verify_ssl": "Verify SSL Certificate"
+        }
+      }
+    }
+  }
+}
