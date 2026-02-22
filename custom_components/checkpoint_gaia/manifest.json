@@ -1,10 +1,10 @@
 {
   "domain": "checkpoint_gaia",
   "name": "CheckPoint Gaia",
-  "codeowners": ["@your_github_username"],
+  "codeowners": ["@deangoldhill"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/your_github_username/checkpoint-gaia",
+  "documentation": "https://github.com/deangoldhill/checkpoint-gaia",
   "iot_class": "local_polling",
   "requirements": [],
   "version": "1.0.0"
