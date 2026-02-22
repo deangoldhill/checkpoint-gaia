@@ -40,7 +40,7 @@ class CheckPointCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=UPDATE_INTERVAL_SECONDS),
         )
         self.entry = entry
-        self.base_url = f"https://{entry.data[CONF_HOST]}:{entry.data[CONF_PORT]}/web_api/v1.8"
+        self.base_url = f"https://{entry.data[CONF_HOST]}:{entry.data[CONF_PORT]}/gaia_api/v1.8"
         self.verify_ssl = entry.data[CONF_VERIFY_SSL]
 
     async def _async_update_data(self):
@@ -66,7 +66,8 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                     "show-serial-number",
                     "show-version",
                     "show-asset",
-                    "show-hostname"
+                    "show-hostname",
+                    "show-connections"
                 ]
 
                 for endpoint in endpoints:
@@ -80,7 +81,7 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                 return self._parse_data(data)
                 
         except Exception as e:
-            raise UpdateFailed(f"Error communicating with CheckPoint API: {e}")
+            raise UpdateFailed(f"Error communicating with CheckPoint Gaia API: {e}")
 
     def _parse_data(self, raw_data):
         parsed = {}
@@ -118,5 +119,9 @@ class CheckPointCoordinator(DataUpdateCoordinator):
 
         # Parse show-hostname
         parsed["hostname"] = raw_data.get("show-hostname", {}).get("hostname", "Unknown")
+
+        # Parse show-connections
+        conn_data = raw_data.get("show-connections", {})
+        parsed["concurrent_connections"] = conn_data.get("total", conn_data.get("connections", conn_data.get("concurrent-connections", 0)))
 
         return parsed
