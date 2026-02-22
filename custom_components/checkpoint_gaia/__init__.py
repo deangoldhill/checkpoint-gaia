@@ -55,7 +55,12 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                 async with session.post(f"{self.base_url}/login", json=login_payload) as resp:
                     resp.raise_for_status()
                     login_data = await resp.json()
-                    sid = login_data.get("sid")
+                    
+                    # Safely get SID whether login_data is a dict or a wrapped list
+                    if isinstance(login_data, dict):
+                        sid = login_data.get("sid")
+                    else:
+                        sid = login_data[0].get("sid")
                 
                 headers = {"X-chkp-sid": sid, "Content-Type": "application/json"}
                 data = {}
@@ -86,42 +91,72 @@ class CheckPointCoordinator(DataUpdateCoordinator):
     def _parse_data(self, raw_data):
         parsed = {}
         
+        # Helper function to safely extract keys regardless of dict or list structures
+        def safe_get(obj, key, default=None):
+            if default is None:
+                default = {}
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            if isinstance(obj, list):
+                for item in obj:
+                    if isinstance(item, dict) and key in item:
+                        return item.get(key, default)
+            return default
+
         # Parse show-diagnostics
-        diag = raw_data.get("show-diagnostics", {})
+        diag = safe_get(raw_data, "show-diagnostics")
         if diag:
             # Memory %
-            mem = diag.get("memory", {})
-            total_mem = mem.get("total", 1) # Prevent div by 0
-            free_mem = mem.get("free", 0)
-            parsed["memory_usage"] = round(((total_mem - free_mem) / total_mem) * 100, 2)
+            mem = safe_get(diag, "memory")
+            total_mem = float(safe_get(mem, "total", 1)) # Prevent div by 0
+            free_mem = float(safe_get(mem, "free", 0))
+            if total_mem > 0:
+                parsed["memory_usage"] = round(((total_mem - free_mem) / total_mem) * 100, 2)
             
             # CPU Total %
-            cpu = diag.get("cpu", {}).get("total", {})
-            parsed["cpu_usage"] = cpu.get("usage", 0)
+            cpu = safe_get(diag, "cpu")
+            cpu_total = safe_get(cpu, "total")
+            parsed["cpu_usage"] = float(safe_get(cpu_total, "usage", 0))
 
             # Disk Usage (/ and /var/log)
-            for disk in diag.get("disk", []):
-                mount = disk.get("mount-point")
-                if mount == "/":
-                    parsed["disk_root_used"] = disk.get("used-percentage", 0)
-                elif mount == "/var/log":
-                    parsed["disk_var_log_used"] = disk.get("used-percentage", 0)
+            disk_data = safe_get(diag, "disk", [])
+            if isinstance(disk_data, dict):
+                disk_data = [disk_data] # Normalize to list if API returned a single dict
+                
+            if isinstance(disk_data, list):
+                for disk in disk_data:
+                    if isinstance(disk, dict):
+                        mount = disk.get("mount-point")
+                        if mount == "/":
+                            parsed["disk_root_used"] = float(disk.get("used-percentage", 0))
+                        elif mount == "/var/log":
+                            parsed["disk_var_log_used"] = float(disk.get("used-percentage", 0))
 
         # Parse show-serial-number
-        parsed["serial_number"] = raw_data.get("show-serial-number", {}).get("serial-number", "Unknown")
+        sn_data = safe_get(raw_data, "show-serial-number")
+        parsed["serial_number"] = safe_get(sn_data, "serial-number", "Unknown")
 
         # Parse show-version
-        parsed["product_version"] = raw_data.get("show-version", {}).get("product-version", "Unknown")
+        ver_data = safe_get(raw_data, "show-version")
+        parsed["product_version"] = safe_get(ver_data, "product-version", "Unknown")
 
         # Parse show-asset
-        sys_asset = raw_data.get("show-asset", {}).get("system", {})
-        parsed["cpu_cores"] = sys_asset.get("cpu-cores", "Unknown")
+        asset_data = safe_get(raw_data, "show-asset")
+        sys_asset = safe_get(asset_data, "system")
+        parsed["cpu_cores"] = safe_get(sys_asset, "cpu-cores", "Unknown")
 
         # Parse show-hostname
-        parsed["hostname"] = raw_data.get("show-hostname", {}).get("hostname", "Unknown")
+        host_data = safe_get(raw_data, "show-hostname")
+        parsed["hostname"] = safe_get(host_data, "hostname", "Unknown")
 
         # Parse show-connections
-        conn_data = raw_data.get("show-connections", {})
-        parsed["concurrent_connections"] = conn_data.get("total", conn_data.get("connections", conn_data.get("concurrent-connections", 0)))
+        conn_data = safe_get(raw_data, "show-connections")
+        parsed["concurrent_connections"] = safe_get(
+            conn_data, "total", safe_get(
+                conn_data, "connections", safe_get(
+                    conn_data, "concurrent-connections", 0
+                )
+            )
+        )
 
         return parsed
