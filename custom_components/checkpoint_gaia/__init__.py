@@ -166,4 +166,9 @@ class CheckPointCoordinator(DataUpdateCoordinator):
         # Fallback: if it returns an actual list of connections instead of a count
         if conn_total is None:
             conn_list = deep_find(conn_data, "objects")
-            if isinstance(
+            if isinstance(conn_list, list):
+                conn_total = len(conn_list)
+
+        parsed["concurrent_connections"] = float(conn_total) if conn_total is not None else 0
+
+        return parsed
