@@ -64,7 +64,7 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                 headers = {"X-chkp-sid": sid, "Content-Type": "application/json"}
                 data = {}
 
-                # 2. Fetch Simple API Data (No specific payload required)
+                # 2. Fetch Simple API Data
                 simple_endpoints = [
                     "show-serial-number",
                     "show-version",
@@ -78,7 +78,7 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                         if resp.status == 200:
                             data[endpoint] = await resp.json()
 
-                # 3. Fetch Diagnostics Data (Requires category and topic payload)
+                # 3. Fetch Diagnostics Data
                 diag_topics = ["cpu", "memory", "disk"]
                 for topic in diag_topics:
                     payload = {
@@ -99,8 +99,7 @@ class CheckPointCoordinator(DataUpdateCoordinator):
 
     def _parse_data(self, raw_data):
         parsed = {}
-        
-        # Helper: Safely find keys case-insensitively
+
         def find_key(obj, target_key):
             if isinstance(obj, dict):
                 for k, v in obj.items():
@@ -127,7 +126,6 @@ class CheckPointCoordinator(DataUpdateCoordinator):
         diag_mem = raw_data.get("diag_memory", {})
         mem_objects = diag_mem.get("objects", [])
         if mem_objects:
-            # Check Point memory usually returns one main object
             mem_obj = mem_objects[0]
             total_mem = float(find_key(mem_obj, "total") or 0)
             free_mem = float(find_key(mem_obj, "free") or 0)
@@ -135,47 +133,43 @@ class CheckPointCoordinator(DataUpdateCoordinator):
                 parsed["memory_usage"] = round(((total_mem - free_mem) / total_mem) * 100, 2)
 
         # --- DIAGNOSTICS: DISK ---
+        # Based on exact JSON payload provided
         diag_disk = raw_data.get("diag_disk", {})
         disk_objects = diag_disk.get("objects", [])
         for disk in disk_objects:
-            mount = find_key(disk, "mount-point") or find_key(disk, "mount")
-            used = find_key(disk, "used-percentage") or find_key(disk, "used")
+            partition = disk.get("partition")
+            used = disk.get("used")
+            total = disk.get("total")
             
-            if mount and used is not None:
-                if isinstance(used, str):
-                    used = used.replace('%', '').strip()
+            if partition and used is not None and total is not None:
                 try:
-                    used_pct = float(used)
-                    if mount == "/":
-                        parsed["disk_root_used"] = used_pct
-                    elif mount in ["/var/log", "/var/log/"]:
-                        parsed["disk_var_log_used"] = used_pct
-                except (ValueError, TypeError):
+                    # Calculate percentage from raw bytes
+                    used_pct = (float(used) / float(total)) * 100
+                    if partition == "/":
+                        parsed["disk_root_used"] = round(used_pct, 2)
+                    elif partition == "/var/log":
+                        parsed["disk_var_log_used"] = round(used_pct, 2)
+                except (ValueError, TypeError, ZeroDivisionError):
                     pass
 
         # --- SIMPLE ASSETS & SYSTEM INFO ---
-        # Serial Number
         sn_data = raw_data.get("show-serial-number", {})
         parsed["serial_number"] = find_key(sn_data, "serial-number") or "Unknown"
 
-        # Version
         ver_data = raw_data.get("show-version", {})
         parsed["product_version"] = find_key(ver_data, "product-version") or "Unknown"
 
-        # CPU Cores
         asset_data = raw_data.get("show-asset", {})
         sys_asset = find_key(asset_data, "system") or asset_data
         parsed["cpu_cores"] = find_key(sys_asset, "cpu-cores") or find_key(sys_asset, "cores") or "Unknown"
 
-        # Hostname
         host_data = raw_data.get("show-hostname", {})
         parsed["hostname"] = find_key(host_data, "hostname") or find_key(host_data, "name") or "Unknown"
 
-        # Concurrent Connections
+        # --- CONCURRENT CONNECTIONS ---
         conn_data = raw_data.get("show-connections", {})
-        
-        # Often concurrent connections are deeply nested or just listed as an array length
         conn_total = None
+        
         for k in ["total", "concurrent-connections", "active-connections", "count"]:
             val = find_key(conn_data, k)
             if val is not None and not isinstance(val, (list, dict)):
